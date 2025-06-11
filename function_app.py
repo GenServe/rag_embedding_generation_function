@@ -8,7 +8,6 @@ from langchain_qdrant import QdrantVectorStore
 from langchain_core.documents import Document
 from azure.storage.blob import BlobClient
 import re
-# from azure.identity import DefaultAzureCredential
 
 from io import BytesIO
 import fitz
