@@ -16,6 +16,7 @@ from lib.multi_file_type_text_extraction import extract_text_by_extension
 from lib.initializer_embedding_model import get_embeddings_model
 from lib.azure_blob_handler import download_blob_from_url, is_valid_azure_blob_url
 from lib.vector_initialisation_chuncking import get_vector_store, chunk_text
+from lib.auth import get_current_user, HTTPAuthorizationCredentials, Security, HTTPException
 
 app = func.FunctionApp()
 
@@ -27,6 +28,26 @@ def rag_embedding_generation_file_upload(req: func.HttpRequest) -> func.HttpResp
     """
 
     logging.info('Processing direct file upload for RAG embedding generation.')
+
+    # Authenticate user
+    try:
+        # Extract the Authorization header
+        auth_header = req.headers.get("Authorization")
+        if not auth_header:
+            return func.HttpResponse(
+                json.dumps({"error": "Missing Authorization header"}),
+                status_code=401,
+                mimetype="application/json"
+            )
+        # Parse credentials for get_current_user
+        # credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=auth_header.split(" ")[1])
+        user = get_current_user(auth_header)
+    except HTTPException as e:
+        return func.HttpResponse(
+            json.dumps({"error": e.detail}),
+            status_code=e.status_code,
+            mimetype="application/json"
+        )
 
     try:
         # Parse multipart form data
