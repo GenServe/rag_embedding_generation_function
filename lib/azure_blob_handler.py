@@ -15,9 +15,9 @@ def download_blob_from_url(blob_url):
         from azure.storage.blob import BlobServiceClient
         
         # Get connection string from app settings
-        connection_string = os.getenv("AzureWebJobsStorage")
+        connection_string = os.getenv("AZURE_BLOB_STORAGE_CONNECTION_STRING")
         if not connection_string:
-            raise ValueError("Missing AzureWebJobsStorage connection string")
+            raise ValueError("Missing AZURE_BLOB_STORAGE_CONNECTION_STRING connection string")
             
         # Parse URL to get container and blob name
         parts = blob_url.replace('https://', '').split('/')
