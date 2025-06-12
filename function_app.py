@@ -19,9 +19,6 @@ from lib.vector_initialisation_chuncking import get_vector_store, chunk_text
 
 app = func.FunctionApp()
 
-
-
-
 @app.route(route="rag_embedding_generation_file_upload", auth_level=func.AuthLevel.ANONYMOUS, methods=["POST"])
 def rag_embedding_generation_file_upload(req: func.HttpRequest) -> func.HttpResponse:
     """

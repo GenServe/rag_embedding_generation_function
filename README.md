@@ -1,211 +1,205 @@
 # RAG Embedding Generation Function
 
-A serverless Azure Function for processing documents stored in Azure Blob Storage, extracting text content, generating embeddings using Azure OpenAI, and storing them in Qdrant vector database for Retrieval Augmented Generation (RAG) systems.
+A serverless Azure Function that processes documents from Azure Blob Storage, extracts text, generates embeddings using Azure OpenAI, and stores them in Qdrant for Retrieval Augmented Generation (RAG) systems.
 
-## 📋 Features
+---
 
-- Process documents from Azure Blob Storage via URL
-- Extract text from multiple file formats:
-  - PDF documents (using PyMuPDF)
-  - Excel files (XLSX, XLS)
-  - CSV files
-  - Text files
-  - HTML documents
-  - Images (using OCR with pytesseract)
-  - Python and SQL files
-- Text chunking with configurable size and overlap
-- Embedding generation using Azure OpenAI
-- Vector storage in Qdrant database
-- RESTful API interface
+## 🚀 Features
+
+- **Document Processing**: Supports PDF, Excel (XLSX/XLS), CSV, TXT, HTML, images (OCR), Python, and SQL files.
+- **Azure Integration**: Reads from Azure Blob Storage, uses Azure OpenAI for embeddings.
+- **Vector Storage**: Stores embeddings in Qdrant vector database.
+- **Batch & Single Processing**: Accepts one or multiple blob URLs per request.
+- **REST API**: HTTP-triggered Azure Function.
+- **Configurable Chunking**: Adjustable chunk size and overlap.
+- \*\*Robust Logging & Error Handling.
+- **Environment Variable Support**: Easily configure secrets and runtime options via environment variables.
+
+---
 
 ## 🏗️ Architecture
 
-The solution consists of:
-
-1. **HTTP Trigger Function**: Accepts blob URLs via HTTP POST requests
-2. **Text Extraction**: Processes documents based on file type
-3. **Text Chunking**: Splits content into manageable chunks
-4. **Embedding Generation**: Creates vector embeddings via Azure OpenAI
-5. **Vector Storage**: Saves embeddings and metadata to Qdrant
-
+```mermaid
+flowchart LR
+  A[HTTP Request] --> B[Azure Blob Storage]
+  B --> C[Text Extraction]
+  C --> D[Text Chunking]
+  D --> E[Azure OpenAI Embedding]
+  E --> F[Qdrant Vector DB]
 ```
-┌─────────────┐    ┌───────────────┐    ┌────────────┐    ┌──────────────┐    ┌────────────┐
-│ HTTP        │    │ Azure Blob    │    │ Text       │    │ Azure OpenAI │    │ Qdrant     │
-│ Request     │───►│ Storage       │───►│ Processing │───►│ Embeddings   │───►│ Vector DB  │
-└─────────────┘    └───────────────┘    └────────────┘    └──────────────┘    └────────────┘
-```
+
+---
 
 ## 🛠️ Prerequisites
 
-- Python 3.8 or higher
+- Python 3.8+
 - Azure Subscription
 - Azure Storage Account
-- Azure OpenAI deployment
-- Qdrant vector database instance
-- Azure Functions Core Tools (for local development)
+- Azure OpenAI Resource
+- Qdrant Instance
+- Azure Functions Core Tools
+
+---
 
 ## 📦 Installation
-
-1. Clone this repository:
 
 ```bash
 git clone <repository-url>
 cd rag_embedding_generation_function
-```
-
-2. Create a virtual environment and install dependencies:
-
-```bash
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
+---
+
 ## ⚙️ Configuration
 
-Create a local.settings.json file for local development:
+Create `local.settings.json` for local development:
 
 ```json
 {
   "IsEncrypted": false,
   "Values": {
-    "AzureWebJobsStorage": "DefaultEndpointsProtocol=https;AccountName=YOUR_STORAGE_ACCOUNT;AccountKey=YOUR_STORAGE_KEY;EndpointSuffix=core.windows.net",
+    "AzureWebJobsStorage": "<your-storage-connection-string>",
     "FUNCTIONS_WORKER_RUNTIME": "python",
-    "AZURE_OPENAI_API_KEY": "YOUR_OPENAI_API_KEY",
+    "AZURE_OPENAI_API_KEY": "<your-openai-api-key>",
     "AZURE_OPENAI_DEPLOYMENT": "text-embedding-3-large",
     "AZURE_OPENAI_TEXTEMBEDDER_API_VERSION": "2023-05-15",
-    "AZURE_OPENAI_TEXTEMBEDDER_ENDPOINT": "https://YOUR_OPENAI_RESOURCE.openai.azure.com/",
+    "AZURE_OPENAI_TEXTEMBEDDER_ENDPOINT": "https://<your-openai-resource>.openai.azure.com/",
     "QDRANT_COLLECTION": "default_collection",
-    "QDRANT_URL": "https://YOUR_QDRANT_INSTANCE.qdrant.io",
-    "QDRANT_API_KEY": "YOUR_QDRANT_API_KEY"
+    "QDRANT_URL": "https://<your-qdrant-instance>.qdrant.io",
+    "QDRANT_API_KEY": "<your-qdrant-api-key>",
+    "CHUNK_SIZE": "1000",
+    "CHUNK_OVERLAP": "200",
+    "LOG_LEVEL": "INFO",
+    "ENABLE_OCR": "true",
+    "PYTESSERACT_PATH": "/usr/bin/tesseract"
   }
 }
 ```
 
-For production deployment, configure these settings in your Azure Function App's Configuration.
+**Newly added environment variables:**
 
-## 🚀 Running Locally
+- `CHUNK_SIZE`: Number of characters per text chunk (default: 1000).
+- `CHUNK_OVERLAP`: Overlap between chunks (default: 200).
+- `LOG_LEVEL`: Logging verbosity (e.g., INFO, DEBUG).
+- `ENABLE_OCR`: Set to `"true"` to enable OCR for images.
+- `PYTESSERACT_PATH`: Path to the Tesseract binary for OCR.
 
-Start the function app locally:
+For production, set these in Azure Function App Configuration.
+
+---
+
+## 🏃 Running Locally
 
 ```bash
 func start
 ```
 
-The function will be available at: `http://localhost:7071/api/rag_embedding_generation_text_extraction`
+API available at: `http://localhost:7071/api/rag_embedding_generation_text_extraction`
+
+---
 
 ## 📝 Usage
 
-### API Endpoint
+### API Request
 
-Send a POST request to the function with a JSON body containing a blob URL:
+**Single document:**
 
 ```bash
 curl -X POST http://localhost:7071/api/rag_embedding_generation_text_extraction \
   -H "Content-Type: application/json" \
-  -d '{
-    "blob_url": "https://yourstorageaccount.blob.core.windows.net/container/document.pdf?sv=2022-11-02&ss=b&srt=sco&sp=r&se=2023-12-31T00:00:00Z&st=2023-01-01T00:00:00Z&spr=https&sig=YOURSASTOKEN"
-  }'
+  -d '{"blob_url": "https://<storage>.blob.core.windows.net/<container>/doc.pdf?sv=..."}'
 ```
 
-### Response Format
+**Batch:**
 
-Successful response:
+```bash
+curl -X POST http://localhost:7071/api/rag_embedding_generation_text_extraction \
+  -H "Content-Type: application/json" \
+  -d '{"blob_urls": ["https://<storage>.blob.core.windows.net/<container>/doc1.pdf?sv=...","https://<storage>.blob.core.windows.net/<container>/doc2.xlsx?sv=..."]}'
+```
+
+### Response
 
 ```json
 {
-  "message": "Blob processed successfully",
-  "filename": "document.pdf",
-  "blob_url": "https://yourstorageaccount.blob.core.windows.net/container/document.pdf?sv=...",
-  "chunks_count": 15,
-  "first_chunk_preview": "This is the beginning of the document..."
+  "results": [
+    {
+      "message": "Blob processed successfully",
+      "filename": "document.pdf",
+      "blob_url": "...",
+      "chunks_count": 15,
+      "first_chunk_preview": "This is the beginning of the document..."
+    }
+  ]
 }
 ```
 
-## 🔐 Authentication Options
+---
 
-### Option 1: SAS Token (Recommended for Direct API Usage)
+## 🔐 Authentication
 
-Include a SAS token in the blob URL:
+- **SAS Token**: Include in blob URL (recommended for direct API use).
+- **Managed Identity**: Enable on Function App, grant Storage Blob Data Reader, update code to use `DefaultAzureCredential`.
+- **Connection String**: Use storage account connection string in settings.
 
-```json
-{
-  "blob_url": "https://yourstorageaccount.blob.core.windows.net/container/document.pdf?sv=2022-11-02&ss=b&srt=sco&sp=r&se=2023-12-31T00:00:00Z&st=2023-01-01T00:00:00Z&spr=https&sig=YOURSASTOKEN"
-}
-```
+---
 
-### Option 2: Azure Managed Identity (Recommended for Production)
+## 📤 Deploying to Azure
 
-For secure production deployment, configure the function app to use managed identity:
+1. **Create Function App:**
+   ```bash
+   az functionapp create --resource-group <ResourceGroup> --consumption-plan-location <region> \
+     --runtime python --runtime-version 3.9 --functions-version 4 \
+     --name <FunctionAppName> --storage-account <StorageAccountName>
+   ```
+2. **Deploy:**
+   ```bash
+   func azure functionapp publish <FunctionAppName>
+   ```
+3. **Configure Settings:**
+   ```bash
+   az functionapp config appsettings set --name <FunctionAppName> --resource-group <ResourceGroup> \
+     --settings "AZURE_OPENAI_API_KEY=..." "AZURE_OPENAI_DEPLOYMENT=..." ...
+   ```
 
-1. Enable system-assigned managed identity for your function app
-2. Grant the managed identity Storage Blob Data Reader access to your storage account
-3. Update the download_blob_from_url function to use DefaultAzureCredential
-
-### Option 3: Connection String
-
-Use the storage account connection string stored in application settings.
-
-## 📤 Deployment to Azure
-
-1. Create an Azure Function App:
-
-```bash
-az functionapp create --resource-group YourResourceGroup --consumption-plan-location eastus \
-  --runtime python --runtime-version 3.9 --functions-version 4 \
-  --name YourFunctionAppName --storage-account YourStorageAccountName
-```
-
-2. Deploy the function app:
-
-```bash
-func azure functionapp publish YourFunctionAppName
-```
-
-3. Configure application settings in Azure Portal or using Azure CLI:
-
-```bash
-az functionapp config appsettings set --name YourFunctionAppName --resource-group YourResourceGroup \
-  --settings "AZURE_OPENAI_API_KEY=your-key" "AZURE_OPENAI_DEPLOYMENT=text-embedding-3-large" ...
-```
+---
 
 ## ⚠️ Troubleshooting
 
-### Authentication Errors
+- **Auth Errors**: Check SAS token, managed identity permissions, or connection string.
+- **Extraction Issues**: Verify file format, dependencies (e.g., pytesseract), and encoding.
+- **Qdrant Errors**: Check URL, API key, collection existence, and network.
+- **OCR Issues**: Ensure `ENABLE_OCR` is set to `"true"` and `PYTESSERACT_PATH` is correct.
 
-If you see "Server failed to authenticate the request" errors:
+---
 
-- Check that your SAS token is valid and has not expired
-- Verify that the managed identity has appropriate permissions
-- Ensure your storage connection string is correctly configured
-
-### Missing Text Extraction
-
-If text extraction fails:
-
-- Check that the file format is supported
-- Ensure required libraries are installed (e.g., pytesseract for OCR)
-- Verify file encoding for text files
-
-### Vector Store Errors
-
-If Qdrant storage fails:
-
-- Verify your Qdrant URL and API key
-- Ensure the collection exists or configure to create automatically
-- Check network connectivity to the Qdrant instance
-
-## 📚 File Structure
+## 📁 File Structure
 
 ```
 rag_embedding_generation_function/
-├── function_app.py             # Main function code
-├── requirements.txt            # Python dependencies
-├── host.json                   # Function host configuration
-├── local.settings.json         # Local settings (not in repo)
-└── README.md                   # Documentation
+├── function_app.py
+├── requirements.txt
+├── host.json
+├── local.settings.json
+└── README.md
 ```
 
-## 📢 Contributing
+---
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+## 🤝 Contributing
+
+Contributions welcome! Open issues or submit PRs.
+
+---
+
+## 📚 References
+
+- [Azure Functions Documentation](https://docs.microsoft.com/azure/azure-functions/)
+- [Azure OpenAI Service](https://learn.microsoft.com/azure/cognitive-services/openai/)
+- [Qdrant Documentation](https://qdrant.tech/documentation/)
+- [Azure Blob Storage](https://docs.microsoft.com/azure/storage/blobs/)
+- [PyMuPDF](https://pymupdf.readthedocs.io/)
+- [pytesseract](https://pypi.org/project/pytesseract/)
