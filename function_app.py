@@ -17,32 +17,10 @@ from PIL import Image
 import pytesseract
 import json
 from multi_file_type_text_extraction import extract_text_by_extension
+from initializer_embedding_model import get_embeddings_model
 
 app = func.FunctionApp()
 
-def get_embeddings_model():
-    try:
-        api_key = os.getenv("AZURE_OPENAI_API_KEY")
-        deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT", "text-embedding-3-large")
-        api_version = os.getenv("AZURE_OPENAI_TEXTEMBEDDER_API_VERSION")
-        endpoint = os.getenv("AZURE_OPENAI_TEXTEMBEDDER_ENDPOINT")
-
-        if not api_key:
-            raise ValueError("Missing AZURE_OPENAI_API_KEY environment variable.")
-        if not api_version:
-            raise ValueError("Missing AZURE_OPENAI_TEXTEMBEDDER_API_VERSION environment variable.")
-        if not endpoint:
-            raise ValueError("Missing AZURE_OPENAI_TEXTEMBEDDER_ENDPOINT environment variable.")
-        return AzureOpenAIEmbeddings(
-            api_key=SecretStr(api_key),
-            azure_deployment=deployment,
-            api_version=api_version,
-            azure_endpoint=endpoint
-        )
-        
-    except Exception as e:
-        logging.error(f"Error initializing AzureOpenAIEmbeddings: {e}")
-        raise
 
 def get_vector_store(embeddings):
     return QdrantVectorStore.from_existing_collection(
@@ -53,13 +31,14 @@ def get_vector_store(embeddings):
         api_key=os.getenv("QDRANT_API_KEY")
     )
 
+# MAKE ENV VARIBALES FOR  chunck_size and chunk_overlap
 def chunk_text(text, chunk_size=2000, chunk_overlap=200):
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=chunk_size, chunk_overlap=chunk_overlap,
         separators=["\n\n", "\n", " ", ""]
     )
     return splitter.split_text(text)
-
+    
 def is_valid_azure_blob_url(url):
     """Validate if the URL is likely an Azure Blob Storage URL"""
     # Basic pattern for Azure blob URLs
