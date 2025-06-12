@@ -108,17 +108,25 @@ API available at: `http://localhost:7071/api/rag_embedding_generation_text_extra
 **Single document:**
 
 ```bash
-curl -X POST http://localhost:7071/api/rag_embedding_generation_text_extraction \
-  -H "Content-Type: application/json" \
-  -d '{"blob_url": "https://<storage>.blob.core.windows.net/<container>/doc.pdf?sv=..."}'
+curl -X POST "http://localhost:7071/api/rag_embedding_generation_file_upload" \
+  -F "file=@customers-1000.csv" \
+  -F "user_id=f85c7d6b-7a64-4b13-b8b7-5a458b0ff7ad" \
+  -F "chat_id=b04391b3-06a4-4277-be1e-820034e6f03c"
+
+curl -X POST "http://localhost:7071/api/rag_embedding_generation_file_upload" \
+  -F "file=@sample3.txt" \
+  -F "user_id=f85c7d6b-7a64-4b13-b8b7-5a458b0ff7ad" \
+  -F "chat_id=b04391b3-06a4-4277-be1e-820034e6f03c"
 ```
 
 **Batch:**
 
 ```bash
-curl -X POST http://localhost:7071/api/rag_embedding_generation_text_extraction \
-  -H "Content-Type: application/json" \
-  -d '{"blob_urls": ["https://<storage>.blob.core.windows.net/<container>/doc1.pdf?sv=...","https://<storage>.blob.core.windows.net/<container>/doc2.xlsx?sv=..."]}'
+curl -X POST "http://localhost:7071/api/rag_embedding_generation_file_upload" \
+  -F "file=@customers-1000.csv" \
+  -F "file=@sample3.txt" \
+  -F "user_id=f85c7d6b-7a64-4b13-b8b7-5a458b0ff7ad" \
+  -F "chat_id=b04391b3-06a4-4277-be1e-820034e6f03c"
 ```
 
 ### Response

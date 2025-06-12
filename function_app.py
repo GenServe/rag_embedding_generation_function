@@ -38,7 +38,7 @@ def rag_embedding_generation_file_upload(req: func.HttpRequest) -> func.HttpResp
                 environ=environ,
                 headers=req.headers
             )
-            fileitem = fs['file']
+            fileitems = fs['file']
             user_id = fs.getvalue('user_id')
             chat_id = fs.getvalue('chat_id')
         except Exception as e:
@@ -48,109 +48,101 @@ def rag_embedding_generation_file_upload(req: func.HttpRequest) -> func.HttpResp
                 mimetype="application/json"
             )
 
-        if fileitem is None or not user_id or not chat_id:
+        # Support both single and multiple files
+        if not isinstance(fileitems, list):
+            fileitems = [fileitems]
+
+        if not fileitems or not user_id or not chat_id:
             return func.HttpResponse(
                 json.dumps({"error": "Missing file, user_id, or chat_id in request."}),
                 status_code=400,
                 mimetype="application/json"
             )
 
-        filename = fileitem.filename
-        file_bytes = fileitem.file.read()
-
-        # Upload file to Azure Blob Storage with user_id and chat_id in path
+        connection_string = os.getenv("AzureWebJobsStorage")
+        container_name = os.getenv("UPLOAD_CONTAINER") or "uploads"
+        if not connection_string:
+            raise ValueError("Missing AzureWebJobsStorage connection string")
+        blob_service_client = BlobServiceClient.from_connection_string(connection_string)
         try:
-            connection_string = os.getenv("AzureWebJobsStorage")
-            container_name = os.getenv("UPLOAD_CONTAINER") or "uploads"
-            if not connection_string:
-                raise ValueError("Missing AzureWebJobsStorage connection string")
+            container_client = blob_service_client.get_container_client(container_name)
+            if not container_client.exists():
+                container_client.create_container()
+        except Exception as e:
+            logging.error(f"Error ensuring blob container exists: {str(e)}")
+            return func.HttpResponse(
+                json.dumps({"error": f"Failed to ensure blob container exists: {str(e)}"}),
+                status_code=500,
+                mimetype="application/json"
+            )
 
+        embeddings = get_embeddings_model()
+        vector_store = get_vector_store(embeddings)
+        results = []
+
+        for fileitem in fileitems:
+            filename = fileitem.filename
+            file_bytes = fileitem.file.read()
             updated_filename = f"{user_id}/{chat_id}/{uuid.uuid4()}_{filename}"
-            blob_service_client = BlobServiceClient.from_connection_string(connection_string)
-            try:
-                # Ensure the container exists
-                container_client = blob_service_client.get_container_client(container_name)
-                if not container_client.exists():
-                    container_client.create_container()
-            except Exception as e:
-                logging.error(f"Error ensuring blob container exists: {str(e)}")
-                return func.HttpResponse(
-                    json.dumps({"error": f"Failed to ensure blob container exists: {str(e)}"}),
-                    status_code=500,
-                    mimetype="application/json"
-                )
             try:
                 blob_client = blob_service_client.get_blob_client(container=container_name, blob=updated_filename)
                 blob_client.upload_blob(file_bytes, overwrite=True)
+                file_url = f"https://{blob_service_client.account_name}.blob.core.windows.net/{container_name}/{updated_filename}"
             except Exception as e:
                 logging.error(f"Error uploading blob: {str(e)}")
-                return func.HttpResponse(
-                    json.dumps({"error": f"Failed to upload file to blob storage: {str(e)}"}),
-                    status_code=500,
-                    mimetype="application/json"
-                )
-            file_url = f"https://{blob_service_client.account_name}.blob.core.windows.net/{container_name}/{updated_filename}"
-        except Exception as e:
-            return func.HttpResponse(
-                json.dumps({"error": f"Failed to upload file to blob storage: {str(e)}"}),
-                status_code=500,
-                mimetype="application/json"
-            )
+                results.append({
+                    "filename": filename,
+                    "error": f"Failed to upload file to blob storage: {str(e)}"
+                })
+                continue
 
-        # Extract text based on file type
-        extraction_result = extract_text_by_extension(filename, file_bytes)
-        if "error" in extraction_result:
-            return func.HttpResponse(
-                json.dumps({"error": extraction_result["error"]}),
-                status_code=400,
-                mimetype="application/json"
-            )
+            extraction_result = extract_text_by_extension(filename, file_bytes)
+            if "error" in extraction_result:
+                results.append({
+                    "filename": filename,
+                    "error": extraction_result["error"]
+                })
+                continue
 
-        content = extraction_result["text"]
+            content = extraction_result["text"]
+            chunks = chunk_text(content)
+            logging.info(f"Chunked {filename} into {len(chunks)} chunks.")
 
-        # Chunk the text
-        chunks = chunk_text(content)
-        logging.info(f"Chunked into {len(chunks)} chunks.")
-
-        # Get embeddings model
-        embeddings = get_embeddings_model()
-
-        # Store in Qdrant
-        try:
-            vector_store = get_vector_store(embeddings)
-            docs = [
-                Document(
-                    page_content=chunk,
-                    metadata={
-                        "filename": filename,
-                        "blob_url": file_url,
-                        "user_id": user_id,
-                        "chat_id": chat_id,
-                        "chunk_index": i
-                    }
-                )
-                for i, chunk in enumerate(chunks)
-            ]
-            vector_store.add_documents(docs)
-            logging.info(f"Stored {len(docs)} chunks in Qdrant vector store.")
-        except Exception as e:
-            logging.warning(f"Could not add to Qdrant: {e}")
-            return func.HttpResponse(
-                json.dumps({"error": f"Failed to store in vector database: {str(e)}", "text_extracted": True}),
-                status_code=500,
-                mimetype="application/json"
-            )
+            try:
+                docs = [
+                    Document(
+                        page_content=chunk,
+                        metadata={
+                            "filename": filename,
+                            "blob_url": file_url,
+                            "user_id": user_id,
+                            "chat_id": chat_id,
+                            "chunk_index": i
+                        }
+                    )
+                    for i, chunk in enumerate(chunks)
+                ]
+                vector_store.add_documents(docs)
+                logging.info(f"Stored {len(docs)} chunks for {filename} in Qdrant vector store.")
+                results.append({
+                    "message": "File uploaded and processed successfully",
+                    "filename": updated_filename,
+                    "user_id": user_id,
+                    "chat_id": chat_id,
+                    "blob_url": file_url,
+                    "chunks_count": len(chunks),
+                    "first_chunk_preview": chunks[0][:100] + "..." if chunks else ""
+                })
+            except Exception as e:
+                logging.warning(f"Could not add {filename} to Qdrant: {e}")
+                results.append({
+                    "filename": filename,
+                    "error": f"Failed to store in vector database: {str(e)}",
+                    "text_extracted": True
+                })
 
         return func.HttpResponse(
-            json.dumps({
-                "message": "File uploaded and processed successfully",
-                "filename": updated_filename,
-                "user_id": user_id,
-                "chat_id": chat_id,
-                "blob_url": file_url,
-                "chunks_count": len(chunks),
-                "first_chunk_preview": chunks[0][:100] + "..." if chunks else ""
-            }),
+            json.dumps(results),
             status_code=200,
             mimetype="application/json"
         )
