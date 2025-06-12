@@ -38,7 +38,7 @@ def chunk_text(text, chunk_size=2000, chunk_overlap=200):
         separators=["\n\n", "\n", " ", ""]
     )
     return splitter.split_text(text)
-    
+
 def is_valid_azure_blob_url(url):
     """Validate if the URL is likely an Azure Blob Storage URL"""
     # Basic pattern for Azure blob URLs
@@ -76,50 +76,88 @@ def download_blob_from_url(blob_url):
         logging.error(f"Error downloading blob: {str(e)}")
         raise
 
-@app.route(route="rag_embedding_generation_text_extraction", auth_level=func.AuthLevel.ANONYMOUS)
-def rag_embedding_generation_text_extraction(req: func.HttpRequest) -> func.HttpResponse:
-    logging.info('Python HTTP trigger function processing blob URL for RAG embedding generation.')
-    
+
+@app.route(route="rag_embedding_generation_file_upload", auth_level=func.AuthLevel.ANONYMOUS, methods=["POST"])
+def rag_embedding_generation_file_upload(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    Endpoint to upload a file directly with user_id and chat_id, then process through the RAG pipeline.
+    Expects multipart/form-data with fields: file, user_id, chat_id
+    """
+    import uuid
+    import cgi
+    from azure.storage.blob import BlobServiceClient
+
+    logging.info('Processing direct file upload for RAG embedding generation.')
+
     try:
-        # Parse request body
+        # Parse multipart form data
         try:
-            req_body = req.get_json()
-        except ValueError:
-            return func.HttpResponse(
-                json.dumps({"error": "Request body must contain valid JSON"}),
-                status_code=400,
-                mimetype="application/json"
+            environ = {'REQUEST_METHOD': 'POST'}
+            environ.update(req.headers)
+            fs = cgi.FieldStorage(
+                fp=BytesIO(req.get_body()),
+                environ=environ,
+                headers=req.headers
             )
-        
-        # Get blob URL from request
-        blob_url = req_body.get('blob_url')
-        if not blob_url:
-            return func.HttpResponse(
-                json.dumps({"error": "Please provide a blob_url in the request body"}),
-                status_code=400,
-                mimetype="application/json"
-            )
-        
-        # Validate blob URL (basic check)
-        if not is_valid_azure_blob_url(blob_url):
-            return func.HttpResponse(
-                json.dumps({"error": "Invalid Azure Blob Storage URL format"}),
-                status_code=400,
-                mimetype="application/json"
-            )
-        
-        # Download the blob
-        try:
-            blob_data = download_blob_from_url(blob_url)
-            file_bytes = blob_data["content"]
-            filename = blob_data["name"]
+            fileitem = fs['file']
+            user_id = fs.getvalue('user_id')
+            chat_id = fs.getvalue('chat_id')
         except Exception as e:
             return func.HttpResponse(
-                json.dumps({"error": f"Failed to download blob: {str(e)}"}),
+                json.dumps({"error": f"Invalid form data: {str(e)}. Must include file, user_id, and chat_id."}),
+                status_code=400,
+                mimetype="application/json"
+            )
+
+        if fileitem is None or not user_id or not chat_id:
+            return func.HttpResponse(
+                json.dumps({"error": "Missing file, user_id, or chat_id in request."}),
+                status_code=400,
+                mimetype="application/json"
+            )
+
+        filename = fileitem.filename
+        file_bytes = fileitem.file.read()
+
+        # Upload file to Azure Blob Storage with user_id and chat_id in path
+        try:
+            connection_string = os.getenv("AzureWebJobsStorage")
+            container_name = os.getenv("UPLOAD_CONTAINER") or "uploads"
+            if not connection_string:
+                raise ValueError("Missing AzureWebJobsStorage connection string")
+
+            updated_filename = f"{user_id}/{chat_id}/{uuid.uuid4()}_{filename}"
+            blob_service_client = BlobServiceClient.from_connection_string(connection_string)
+            try:
+                # Ensure the container exists
+                container_client = blob_service_client.get_container_client(container_name)
+                if not container_client.exists():
+                    container_client.create_container()
+            except Exception as e:
+                logging.error(f"Error ensuring blob container exists: {str(e)}")
+                return func.HttpResponse(
+                    json.dumps({"error": f"Failed to ensure blob container exists: {str(e)}"}),
+                    status_code=500,
+                    mimetype="application/json"
+                )
+            try:
+                blob_client = blob_service_client.get_blob_client(container=container_name, blob=updated_filename)
+                blob_client.upload_blob(file_bytes, overwrite=True)
+            except Exception as e:
+                logging.error(f"Error uploading blob: {str(e)}")
+                return func.HttpResponse(
+                    json.dumps({"error": f"Failed to upload file to blob storage: {str(e)}"}),
+                    status_code=500,
+                    mimetype="application/json"
+                )
+            file_url = f"https://{blob_service_client.account_name}.blob.core.windows.net/{container_name}/{updated_filename}"
+        except Exception as e:
+            return func.HttpResponse(
+                json.dumps({"error": f"Failed to upload file to blob storage: {str(e)}"}),
                 status_code=500,
                 mimetype="application/json"
             )
-        
+
         # Extract text based on file type
         extraction_result = extract_text_by_extension(filename, file_bytes)
         if "error" in extraction_result:
@@ -128,16 +166,16 @@ def rag_embedding_generation_text_extraction(req: func.HttpRequest) -> func.Http
                 status_code=400,
                 mimetype="application/json"
             )
-        
+
         content = extraction_result["text"]
-        
+
         # Chunk the text
         chunks = chunk_text(content)
         logging.info(f"Chunked into {len(chunks)} chunks.")
-        
+
         # Get embeddings model
         embeddings = get_embeddings_model()
-        
+
         # Store in Qdrant
         try:
             vector_store = get_vector_store(embeddings)
@@ -146,7 +184,9 @@ def rag_embedding_generation_text_extraction(req: func.HttpRequest) -> func.Http
                     page_content=chunk,
                     metadata={
                         "filename": filename,
-                        "blob_url": blob_url,
+                        "blob_url": file_url,
+                        "user_id": user_id,
+                        "chat_id": chat_id,
                         "chunk_index": i
                     }
                 )
@@ -161,23 +201,132 @@ def rag_embedding_generation_text_extraction(req: func.HttpRequest) -> func.Http
                 status_code=500,
                 mimetype="application/json"
             )
-        
+
         return func.HttpResponse(
             json.dumps({
-                "message": "Blob processed successfully",
-                "filename": filename,
-                "blob_url": blob_url,
+                "message": "File uploaded and processed successfully",
+                "filename": updated_filename,
+                "user_id": user_id,
+                "chat_id": chat_id,
+                "blob_url": file_url,
                 "chunks_count": len(chunks),
                 "first_chunk_preview": chunks[0][:100] + "..." if chunks else ""
             }),
             status_code=200,
             mimetype="application/json"
         )
-        
+
     except Exception as e:
-        logging.error(f"Error processing blob URL: {str(e)}")
+        logging.error(f"Error processing file upload: {str(e)}")
         return func.HttpResponse(
             json.dumps({"error": str(e)}),
             status_code=500,
             mimetype="application/json"
         )
+
+
+# @app.route(route="rag_embedding_generation_text_extraction", auth_level=func.AuthLevel.ANONYMOUS)
+# def rag_embedding_generation_text_extraction(req: func.HttpRequest) -> func.HttpResponse:
+#     logging.info('Python HTTP trigger function processing blob URL for RAG embedding generation.')
+    
+#     try:
+#         # Parse request body
+#         try:
+#             req_body = req.get_json()
+#         except ValueError:
+#             return func.HttpResponse(
+#                 json.dumps({"error": "Request body must contain valid JSON"}),
+#                 status_code=400,
+#                 mimetype="application/json"
+#             )
+        
+#         # Get blob URL from request
+#         blob_url = req_body.get('blob_url')
+#         if not blob_url:
+#             return func.HttpResponse(
+#                 json.dumps({"error": "Please provide a blob_url in the request body"}),
+#                 status_code=400,
+#                 mimetype="application/json"
+#             )
+        
+#         # Validate blob URL (basic check)
+#         if not is_valid_azure_blob_url(blob_url):
+#             return func.HttpResponse(
+#                 json.dumps({"error": "Invalid Azure Blob Storage URL format"}),
+#                 status_code=400,
+#                 mimetype="application/json"
+#             )
+        
+#         # Download the blob
+#         try:
+#             blob_data = download_blob_from_url(blob_url)
+#             file_bytes = blob_data["content"]
+#             filename = blob_data["name"]
+#         except Exception as e:
+#             return func.HttpResponse(
+#                 json.dumps({"error": f"Failed to download blob: {str(e)}"}),
+#                 status_code=500,
+#                 mimetype="application/json"
+#             )
+        
+#         # Extract text based on file type
+#         extraction_result = extract_text_by_extension(filename, file_bytes)
+#         if "error" in extraction_result:
+#             return func.HttpResponse(
+#                 json.dumps({"error": extraction_result["error"]}),
+#                 status_code=400,
+#                 mimetype="application/json"
+#             )
+        
+#         content = extraction_result["text"]
+        
+#         # Chunk the text
+#         chunks = chunk_text(content)
+#         logging.info(f"Chunked into {len(chunks)} chunks.")
+        
+#         # Get embeddings model
+#         embeddings = get_embeddings_model()
+        
+#         # Store in Qdrant
+#         try:
+#             vector_store = get_vector_store(embeddings)
+#             docs = [
+#                 Document(
+#                     page_content=chunk,
+#                     metadata={
+#                         "filename": filename,
+#                         "blob_url": blob_url,
+#                         "chunk_index": i
+#                     }
+#                 )
+#                 for i, chunk in enumerate(chunks)
+#             ]
+#             vector_store.add_documents(docs)
+#             logging.info(f"Stored {len(docs)} chunks in Qdrant vector store.")
+#         except Exception as e:
+#             logging.warning(f"Could not add to Qdrant: {e}")
+#             return func.HttpResponse(
+#                 json.dumps({"error": f"Failed to store in vector database: {str(e)}", "text_extracted": True}),
+#                 status_code=500,
+#                 mimetype="application/json"
+#             )
+        
+#         return func.HttpResponse(
+#             json.dumps({
+#                 "message": "Blob processed successfully",
+#                 "filename": filename,
+#                 "blob_url": blob_url,
+#                 "chunks_count": len(chunks),
+#                 "first_chunk_preview": chunks[0][:100] + "..." if chunks else ""
+#             }),
+#             status_code=200,
+#             mimetype="application/json"
+#         )
+        
+#     except Exception as e:
+#         logging.error(f"Error processing blob URL: {str(e)}")
+#         return func.HttpResponse(
+#             json.dumps({"error": str(e)}),
+#             status_code=500,
+#             mimetype="application/json"
+#         )
