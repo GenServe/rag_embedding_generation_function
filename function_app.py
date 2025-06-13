@@ -80,10 +80,10 @@ def rag_embedding_generation_file_upload(req: func.HttpRequest) -> func.HttpResp
                 mimetype="application/json"
             )
 
-        connection_string = os.getenv("AzureWebJobsStorage")
+        connection_string = os.getenv("AZURE_BLOB_STORAGE_CONNECTION_STRING")
         container_name = os.getenv("UPLOAD_CONTAINER") or "uploads"
         if not connection_string:
-            raise ValueError("Missing AzureWebJobsStorage connection string")
+            raise ValueError("Missing AZURE_BLOB_STORAGE_CONNECTION_STRING")
         blob_service_client = BlobServiceClient.from_connection_string(connection_string)
         try:
             container_client = blob_service_client.get_container_client(container_name)
