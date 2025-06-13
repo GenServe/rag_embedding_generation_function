@@ -60,7 +60,7 @@ def rag_embedding_generation_file_upload(req: func.HttpRequest) -> func.HttpResp
                 headers=req.headers
             )
             fileitems = fs['file']
-            user_id = fs.getvalue('user_id')
+            user_id = user["user_id"]  # Use user_id from authenticated user
             chat_id = fs.getvalue('chat_id')
         except Exception as e:
             return func.HttpResponse(
