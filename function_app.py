@@ -40,7 +40,7 @@ def rag_embedding_generation_file_upload(req: func.HttpRequest) -> func.HttpResp
                 mimetype="application/json"
             )
         # Parse credentials for get_current_user
-        # credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=auth_header.split(" ")[1])
+        
         user = get_current_user(auth_header)
     except HTTPException as e:
         return func.HttpResponse(
