@@ -18,7 +18,7 @@ def get_embeddings_model():
             raise ValueError("Missing AZURE_OPENAI_TEXTEMBEDDER_ENDPOINT environment variable.")
         return AzureOpenAIEmbeddings(
             api_key=SecretStr(api_key),
-            azure_deployment=deployment,
+            deployment=deployment,  # type: ignore
             api_version=api_version,
             azure_endpoint=endpoint
         )

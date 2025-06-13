@@ -8,9 +8,9 @@ from jose.exceptions import ExpiredSignatureError
 from datetime import datetime, timedelta, timezone
 from .config import settings
 
-from datetime import datetime, timedelta
+
 from jose import JWTError, jwt
-# from app.schemas.user import TokenData
+
 
 # Initialize HTTPBearer
 security = HTTPBearer()
@@ -31,12 +31,6 @@ def get_current_user(auth_header: str) -> Dict:
 
     return payload
 
-
-# def create_access_token(data: dict, expires_delta: timedelta):
-#     to_encode = data.copy()
-#     expire = datetime.now(timezone.utc) + expires_delta
-#     to_encode.update({"exp": expire, "aud": "genserve.ai"})  # Audience is genserve.ai
-#     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 def decode_access_token(token: str):
     try:
