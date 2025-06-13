@@ -16,7 +16,7 @@ from lib.multi_file_type_text_extraction import extract_text_by_extension
 from lib.initializer_embedding_model import get_embeddings_model
 from lib.azure_blob_handler import download_blob_from_url, is_valid_azure_blob_url
 from lib.vector_initialisation_chuncking import get_vector_store, chunk_text
-from lib.auth import get_current_user, HTTPAuthorizationCredentials, Security, HTTPException
+from lib.auth import get_current_user, Security, HTTPException
 
 app = func.FunctionApp()
 
